@@ -279,6 +279,7 @@ def main():
                                         #finalText += button.text
                                         if button.text =='EXIT':
                                             break_cam = True
+                                            time.sleep(2)
                                         if button.text == "RESET":
                                             total_score = 0
                                             game_over = False
