@@ -12,6 +12,9 @@ import time
 mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
 mp_hands = mp.solutions.hands
+mpPose = mp.solutions.pose
+pose = mpPose.Pose()
+mpDraw = mp.solutions.drawing_utils
 
 class Button():
     def __init__(self, pos, text, size=[85, 85]):
@@ -155,19 +158,21 @@ class HandCricket:
 
 
 
+data_of_instance ={
+    "break_cam":False,
+    'score':0,
+    "system_score":0,
+    "status":"Inactive",
+    "total_score":0,
+    "game_over":False,
+    "mode":'hard'
+}
 
-def main():
+cap = cv2.VideoCapture(0)
 
-    cap = cv2.VideoCapture(0)
+def get_image():
+    mode =  data_of_instance['mode']
     hcric = HandCricket(detectionCon=0.9, maxHands=2)
-    break_cam = False
-    score = 0
-    system_score = 0
-    score_up = score
-    status = 'Inactive'
-    total_score = score
-    game_over = False
-    mode = 'hard'
     if mode=='hard':decay_rate = 1
     if mode=='medium':decay_rate = 0.5
     if mode=='easy': decay_rate = 0.1
@@ -175,7 +180,7 @@ def main():
     while cap.isOpened():
         success, img = cap.read()
         h,w,c = img.shape
-        if str(status).lower()=='inactive':
+        if str(data_of_instance['status']).lower()=='inactive':
             cv2.putText(img,'Please show your hand to cam',(w//6,h//2), cv2.FONT_HERSHEY_SIMPLEX, 1,
                   (153, 0, 153), 2, cv2.LINE_AA, False)
             status_color = (0,0,179)
@@ -185,25 +190,32 @@ def main():
             continue
         img.flags.writeable = False
         hands = hcric.findHands(img,draw=False)
+        pose_result = pose.process(img)
         if len(hands)>0: 
-            status = 'Active'
+            data_of_instance["status"] = 'Active'
             status_color = (37, 247, 5)
             
-        if hands and not game_over:
+        if hands and not data_of_instance['game_over']:
             hand1 = hands[0]
             handType1 = hand1["type"]  # Handtype Left or Right
             fingers1 = hcric.fingersUp(hand1)
             if fingers1[0]==1 and len(hands)==1 and sum(fingers1)!=5:
-                 score = 6 + sum(fingers1[1:])
-            elif len(hands)==1: score = sum(fingers1)
+                data_of_instance["score"] = 6 + sum(fingers1[1:])
+            elif len(hands)==1: 
+                data_of_instance["score"] = sum(fingers1)
             if len(hands)==2:
                 hand2 = hands[1]
                 handType2 = hand2["type"]  # Handtype Left or Right
                 fingers2 = hcric.fingersUp(hand2)
-                score = sum(fingers1)+sum(fingers2)
+                data_of_instance["score"] = sum(fingers1)+sum(fingers2)
         
             
-        if status=='Active' and not game_over:
+        if data_of_instance["status"]=='Active' and not data_of_instance["game_over"]:
+            
+            lwrist = pose_result.pose_landmarks.landmark[mpPose.PoseLandmark.LEFT_WRIST].x * w
+            rwrist = pose_result.pose_landmarks.landmark[mpPose.PoseLandmark.RIGHT_WRIST].x * w
+            if rwrist>lwrist: data_of_instance["status"]='Inactive'
+                
             delay-=decay_rate
             if delay//10 in [3,2,1]:
                 cv2.putText(img,f'{round(delay//10)}',(w//2,h//2), cv2.FONT_HERSHEY_SIMPLEX, 5,
@@ -211,20 +223,20 @@ def main():
             
             
             if round(delay,1)==0.0:  
-                system_score = random.randint(1,10)
-                score_up = score
+                data_of_instance["system_score"] = random.randint(1,10)
+                score_up = data_of_instance['score']
                 delay=100
                 
-                if system_score == score_up:
-                    game_over = True
+                if data_of_instance["system_score"] == data_of_instance['score']:
+                    data_of_instance["game_over"] = True
                     
-                if game_over and total_score == 0: total_score = 0
-                elif game_over: total_score+=0
-                else: total_score+=score_up
+                if data_of_instance["game_over"] and data_of_instance["total_score"] == 0: data_of_instance["total_score"] = 0
+                elif data_of_instance["game_over"]: data_of_instance["total_score"]+=0
+                else: data_of_instance["total_score"]+=score_up
 
 
-            if delay//10 in [10,9] and total_score!=0:
-                cv2.putText(img,f'Score = {score}',(w//4,h//2), cv2.FONT_HERSHEY_SIMPLEX, 2,
+            if delay//10 in [10,9] and data_of_instance["total_score"]!=0:
+                cv2.putText(img,f'Score = {data_of_instance["score"]}',(w//4,h//2), cv2.FONT_HERSHEY_SIMPLEX, 2,
                   (255, 178, 26), 5, cv2.LINE_AA, False)
                     
                 
@@ -239,17 +251,17 @@ def main():
                   (153, 0, 153), 2, cv2.LINE_AA, False) """
 
         img = PIL.Image.fromarray(img)
-        table_score = [(f"Total Score: {total_score}",f"Score: {score_up}",f"AI: {system_score}")]
+        table_score = [(f"Total Score: {data_of_instance['total_score']}",f"Score: {data_of_instance['score']}",f"AI: {data_of_instance['system_score']}")]
         table_draw = drawtable.Drawtable(x=0,y=h-50,xend=w,drawsheet=img,data=table_score,font_size=36,text_stroke_fill=(255,255,255),frame=False,text_color=(163, 24, 222),grid=False,columngrid=False,rowgrid=False,header=False,columnwidth=[0.5,0.3,0.2])
         table_draw.draw_table()
         img= cv2.cvtColor(np.array(img), cv2.COLOR_RGB2RGBA)
 
-        score = 0
-        if game_over :
+        data_of_instance["score"] = 0
+        if data_of_instance['game_over'] :
 
                     cv2.putText(img,f'GAME OVER',(w//4,(h//2)-40), cv2.FONT_HERSHEY_SIMPLEX, 2,
                         (46, 0, 255), 3, cv2.LINE_AA, False)
-                    cv2.putText(img,f'Score = {total_score}',(w//4,(h//2)+20), cv2.FONT_HERSHEY_SIMPLEX, 2,
+                    cv2.putText(img,f'Score = {data_of_instance["total_score"]}',(w//4,(h//2)+20), cv2.FONT_HERSHEY_SIMPLEX, 2,
                         (46, 0, 255), 3, cv2.LINE_AA, False)
                     buttonList = []
                     text_repo = ['RESET','EXIT']
@@ -278,13 +290,13 @@ def main():
                                                     cv2.FONT_HERSHEY_PLAIN, 4, (255, 255, 255), 4)
                                         #finalText += button.text
                                         if button.text =='EXIT':
-                                            break_cam = True
+                                            data_of_instance["break_cam"] = True
                                             time.sleep(2)
                                         if button.text == "RESET":
-                                            total_score = 0
-                                            game_over = False
-                                            system_score = 0
-                                            score = 0
+                                            data_of_instance["total_score"] = 0
+                                            data_of_instance["game_over"] = False
+                                            data_of_instance["system_score"] = 0
+                                            data_of_instance["score"] = 0
                                             
                                           
                     
@@ -292,16 +304,16 @@ def main():
         cv2.imshow('MediaPipe Hands', img)
     
         keys = cv2.waitKey(1) & 0xFF 
-        if keys == ord('q') or break_cam:
+        if keys == ord('q') or data_of_instance['break_cam']:
             break
-        elif break_cam or keys == ord('s'):
+            cap.release()
+        elif data_of_instance["break_cam"] or keys == ord('s'):
             print('s is pressed')
             break
-        
-    cap.release()
+            cap.release()
 
 if __name__=='__main__':
-    #
-
-    main()
+    get_image()
+        
     
+
